@@ -1,6 +1,6 @@
 <div align="center">
 
-# Aegis
+<img src="https://github.com/Terrificdatabytes/Aegis/blob/main/redesign/logo.png" alt="Aegis logo" width="320">
 
 ### Privacy-preserving detection of cloud data breaches, identity attacks, and virtualization threats
 
@@ -214,7 +214,7 @@ This is a **demonstration prototype**, not a production security product. All at
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — replace with your preferred license before publishing.
 
 <div align="center">
 <sub>Built with Aegis · Evidence comes from the agents, not the interface.</sub>
