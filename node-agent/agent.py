@@ -1,8 +1,10 @@
 import collections
 import importlib
+import multiprocessing
 import os
 import queue
 import re
+import resource as resource_usage
 import secrets
 import subprocess
 import sys
@@ -11,11 +13,33 @@ import time
 import uuid
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import psutil
 import requests
 from flask import Flask, request, jsonify
 from common.contract import NODES, SCENARIOS, now
 from common.security import Verifier, signed_headers, encode, valid_agent_url
+
+# Resource-spike governance: this node's own demo workload normally uses
+# ~50-60MB. A single-tenant process asking for far more than that is the
+# noisy-neighbor signal. The child that performs the actual allocation runs
+# isolated from the Flask process, capped hard regardless of what's asked
+# for, and is always joined with a timeout so it cannot outlive its demo.
+RESOURCE_BASELINE_MB = 60
+RESOURCE_ABNORMAL_MB = 500
+RESOURCE_HARD_CAP_MB = 2048
+RESOURCE_HOLD_SECONDS = 2.5
+
+
+def _consume_memory(mb, hold_seconds):
+    """Runs in an isolated child process. Actually allocates and touches
+    `mb` megabytes (so the OS commits real resident memory, not just a lazy
+    virtual mapping), holds it briefly, then exits — which frees it."""
+    try:
+        block = bytearray(mb * 1024 * 1024)
+        for i in range(0, len(block), 4096):
+            block[i] = 1
+        time.sleep(hold_seconds)
+    except MemoryError:
+        pass
 
 
 class Detector:
@@ -33,6 +57,7 @@ class Detector:
             self.locked_until = {}
             self.tokens = {}
             self.reported = set()
+            self.resource_blocked = set()
 
     def incident(self, kind, severity, detail, control, analysis, run_id):
         incident_id = str(uuid.uuid4())
@@ -94,6 +119,34 @@ class Detector:
             entry['used'] = True
             return {'redeemed': True}, 200
 
+    def resource_spike(self, actor, mb, run_id):
+        with self.lock:
+            if actor in self.resource_blocked:
+                return {'error': 'Actor blocked', 'peak_rss_mb': 0, 'requested_mb': 0}, 403
+        requested = min(mb, RESOURCE_HARD_CAP_MB)  # hard safety cap regardless of client input
+        before = resource_usage.getrusage(resource_usage.RUSAGE_CHILDREN).ru_maxrss
+        # Isolated so a kernel OOM-kill can never take down this agent process.
+        proc = multiprocessing.Process(target=_consume_memory, args=(requested, RESOURCE_HOLD_SECONDS))
+        proc.start()
+        proc.join(timeout=RESOURCE_HOLD_SECONDS + 5)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join()
+        after = resource_usage.getrusage(resource_usage.RUSAGE_CHILDREN).ru_maxrss
+        peak_mb = round(max(0, after - before) / 1024, 1)  # ru_maxrss is in KB on Linux
+        with self.lock:
+            if requested > RESOURCE_ABNORMAL_MB:
+                self.resource_blocked.add(actor)
+                self.incident('virtualization_threat', 'high',
+                              f'Abnormal synthetic resource spike: actor requested {requested}MB '
+                              f'(baseline ~{RESOURCE_BASELINE_MB}MB); isolated child measured {peak_mb}MB peak RSS.',
+                              'Per-actor resource quota (noisy-neighbor guard)',
+                              f'Actor {actor} exceeded the per-node resource budget by a wide margin. '
+                              f'Blocking further workload requests from this actor.', run_id)
+                return {'error': 'Abnormal resource consumption; actor blocked', 'peak_rss_mb': peak_mb,
+                        'requested_mb': requested, 'baseline_mb': RESOURCE_BASELINE_MB}, 403
+            return {'peak_rss_mb': peak_mb, 'requested_mb': requested, 'baseline_mb': RESOURCE_BASELINE_MB}, 200
+
     def connect(self, target, port, run_id):
         with self.lock:
             # Enforced BEFORE any socket/request operation. There is no peer-network client here.
@@ -150,6 +203,14 @@ def create_app(node_id, key, emit=None):
     @app.post('/sandbox/redeem')
     def redeem():
         body, code = detector.redeem(str(payload().get('token', '')), payload().get('run_id', 'manual'))
+        return jsonify(body), code
+
+    @app.post('/sandbox/workload')
+    def workload():
+        p = payload()
+        if p.get('actor') not in ['baseline-reader', 'demo-reader'] or type(p.get('mb')) is not int or not 1 <= p['mb'] <= RESOURCE_HARD_CAP_MB:
+            return jsonify(error=f'Only fixed synthetic actors and 1-{RESOURCE_HARD_CAP_MB} MB allowed'), 400
+        body, code = detector.resource_spike(p['actor'], p['mb'], p.get('run_id', 'manual'))
         return jsonify(body), code
 
     @app.post('/sandbox/connect')
@@ -243,30 +304,13 @@ def create_app(node_id, key, emit=None):
                     response = client.post(path, data=body, headers=signed_headers(key, 'master', 'POST', path, body))
                     return {'status': response.status_code, 'body': response.get_json()}
             if p['scenario'] == 'virtualization_threat':
-                result = importlib.import_module('scenarios.virtualization_threat').run(lambda: execute_peer_probe(p))
+                result = importlib.import_module('scenarios.virtualization_threat').run(lambda: execute_peer_probe(p), call, node_id=node_id)
             else:
                 result = importlib.import_module('scenarios.' + p['scenario']).run(call, node_id=node_id)
             return jsonify(result)
         finally: run_lock.release()
 
     return app
-
-
-class ResourceSampler:
-    def __init__(self, node_id):
-        self.node_id = node_id
-        self.process = psutil.Process()
-        psutil.cpu_percent(interval=None)
-        self.process.cpu_percent(interval=None)
-
-    def sample(self):
-        memory = psutil.virtual_memory()
-        return {'node_id': self.node_id, 'timestamp': now(), 'scope': 'runtime-host',
-                'cpu_percent': psutil.cpu_percent(interval=None), 'ram_percent': memory.percent,
-                'ram_used_bytes': memory.total - memory.available, 'ram_total_bytes': memory.total,
-                'process_cpu_percent': self.process.cpu_percent(interval=None),
-                'process_rss_bytes': self.process.memory_info().rss,
-                'cpu_count': psutil.cpu_count() or 1}
 
 
 class Reporter:
@@ -309,17 +353,8 @@ class Reporter:
                     delay = min(delay * 2, 16)
             self.events.task_done()
 
-    def telemetry_loop(self):
-        # Initialize and sample on the same thread: psutil host CPU baselines are thread-local.
-        sampler = ResourceSampler(self.node_id)
-        while not self.stop.wait(2):
-            try: self.post('/api/telemetry', sampler.sample())
-            except Exception as exc:
-                print(f'[{self.node_id}] resource sample skipped: {type(exc).__name__}', flush=True)
-        # Do not queue old samples after an outage; gaps must remain visible.
-
     def start(self):
-        for fn in [self.registration_loop, self.event_loop, self.telemetry_loop]: threading.Thread(target=fn, daemon=True).start()
+        for fn in [self.registration_loop, self.event_loop]: threading.Thread(target=fn, daemon=True).start()
 
 
 def quick_tunnel(port):
