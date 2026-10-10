@@ -56,7 +56,7 @@ Five independent agent nodes (standing in for cloud VMs) register with a central
 
 <br>
 
-## 🏗️ Architecture
+##  Architecture
 
 ```mermaid
 flowchart LR
@@ -93,7 +93,7 @@ Each agent node is reachable only through its own **Cloudflare Tunnel** URL and 
 
 <br>
 
-## 🎯 The three scenarios
+##  The three scenarios
 
 | # | Scenario | Staged pattern | Real control | Outcome |
 |---|---|---|---|---|
@@ -110,7 +110,7 @@ Detected  →  Analyzing  →  Prevented
 
 <br>
 
-## 🔐 Security model
+##  Security model
 
 Aegis treats the *defense* layer as the actual product — the "attack" side is theatrical, the control side is not.
 
@@ -126,7 +126,7 @@ Aegis treats the *defense* layer as the actual product — the "attack" side is 
 
 <br>
 
-## 📁 Repository structure
+##  Repository structure
 
 ```
 cloud-security-demo/
@@ -150,7 +150,7 @@ cloud-security-demo/
 
 <br>
 
-## 🚀 Setup
+##  Setup
 
 <details>
 <summary><b>Run everything locally (one command)</b></summary>
@@ -190,7 +190,7 @@ python run_scenario.py data_breach --node node-1 --master https://your-service.o
 
 <br>
 
-## 🧰 Stack
+##  Stack
 
 <div align="center">
 
@@ -206,7 +206,7 @@ python run_scenario.py data_breach --node node-1 --master https://your-service.o
 
 <br>
 
-## ⚠️ Scope & disclaimer
+##  Scope & disclaimer
 
 This is a **demonstration prototype**, not a production security product. All attacks are staged sequences run against fixed, self-owned synthetic targets created specifically to receive them — no functional exploit code, no real credential harvesting, no real privilege escalation. The detection and prevention logic is real and genuinely enforced; the "attacker" side exists purely to trigger it in a way an audience can follow live.
 
