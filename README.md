@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://github.com/Terrificdatabytes/Aegis/blob/main/redesign/logo.png" alt="Aegis logo" width="320">
+<img src="https://github.com/Terrificdatabytes/Aegis/blob/main/redesign/logo.PNG" alt="Aegis logo" width="320">
 
 ### Privacy-preserving detection of cloud data breaches, identity attacks, and virtualization threats
 
