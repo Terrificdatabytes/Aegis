@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: cloud-security-demo
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd master-server && gunicorn 'app:create_app()' --bind 0.0.0.0:$PORT --workers 1 --threads 12 --timeout 120 --access-logfile -
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: MASTER_SECRET
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: COOKIE_SECURE
+        value: '1'

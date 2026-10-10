@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cloud Security Demo Event v1",
+  "type": "object",
+  "required": ["node_id", "event_type", "stage", "severity", "timestamp", "detail", "control_applied"],
+  "properties": {
+    "node_id": {"enum": ["node-1", "node-2", "node-3", "node-4", "node-5"]},
+    "event_type": {"enum": ["data_breach", "identity_attack", "virtualization_threat", "heartbeat"]},
+    "stage": {"enum": ["detected", "analyzing", "prevented"]},
+    "severity": {"enum": ["low", "medium", "high", "critical"]},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "detail": {"type": "string", "minLength": 1, "maxLength": 1000},
+    "control_applied": {"type": "string", "minLength": 1, "maxLength": 1000},
+    "event_id": {"type": "string", "maxLength": 100},
+    "incident_id": {"type": "string", "maxLength": 100},
+    "run_id": {"type": "string", "maxLength": 100},
+    "source_node": {"enum": ["node-1", "node-2", "node-3", "node-4", "node-5"]}
+  },
+  "additionalProperties": true
+}

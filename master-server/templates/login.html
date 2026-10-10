@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aegis / Operator access</title>
+<link rel="preload" href="/static/fonts/ibm-plex-sans-400.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/static/fonts/ibm-plex-mono-400.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="/static/output.css">
+</head><body class="bg-console-bg font-sans text-sm text-console-text antialiased">
+<header class="border-b border-console-line px-6 py-4"><a href="/" class="text-2xl font-semibold tracking-tight">Aegis<span class="text-console-muted">/</span></a><span class="ml-5 text-sm text-console-muted">Security console</span></header>
+<main class="mx-auto max-w-lg px-6 py-16 sm:py-24"><p class="text-sm text-console-muted">Cloud defense lab</p><h1 class="mt-3 text-2xl font-medium">Operator access</h1><p class="mt-4 text-sm text-console-muted">Five distributed agents. Signed detection and prevention evidence. Enter your operator password to inspect the lab.</p>
+<form action="/login" method="post" class="mt-8 border-y border-console-line py-6"><label for="password" class="block text-sm">Operator password</label><input id="password" name="password" type="password" required autocomplete="current-password" placeholder="Enter operator password" class="mt-3 w-full border border-console-muted bg-transparent px-3 py-3 font-mono text-sm placeholder:font-sans placeholder:text-console-muted focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-console-text">
+<button type="submit" class="border border-console-muted px-3 py-2 text-sm text-console-text hover:border-console-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-console-text disabled:cursor-not-allowed disabled:opacity-40 mt-5 w-full text-left">Open console →</button></form>
+{% if error %}<p role="alert" class="mt-4 border-l-2 border-signal-amber pl-3 text-sm text-signal-amber">{{ error }}</p>{% endif %}
+<p class="mt-6 text-sm text-console-muted">Self-owned sandbox. No production targets.</p>
+</main></body></html>

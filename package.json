@@ -1,0 +1,12 @@
+{
+  "name": "cloud-security-demo",
+  "private": true,
+  "scripts": {
+    "css": "tailwindcss -i master-server/static/tailwind.input.css -o master-server/static/output.css --minify",
+    "test:ui": "node tests/ui.cjs"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17",
+    "playwright": "1.56.0"
+  }
+}
