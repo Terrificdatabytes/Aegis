@@ -214,7 +214,7 @@ This is a **demonstration prototype**, not a production security product. All at
 
 ## License
 
-[MIT](LICENSE) — replace with your preferred license before publishing.
+[MIT](LICENSE)
 
 <div align="center">
 <sub>Built with Aegis · Evidence comes from the agents, not the interface.</sub>
