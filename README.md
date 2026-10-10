@@ -1,85 +1,221 @@
-# Aegis · Cloud Security Demo
+<div align="center">
 
-A runnable, synthetic distributed-cloud security lab based on `prompt.md`. A Flask/Tailwind command center orchestrates five Python agents and shows **Detected → Analysis → Prevented** with real enforcement outcomes.
+# Aegis
 
-## Start locally
+### Privacy-preserving detection of cloud data breaches, identity attacks, and virtualization threats
 
-Requires Python 3.11+ (no cloud accounts or Node.js needed to run).
+A live, distributed security console that stages three classes of attack against **synthetic, self-owned targets** and proves — with real cryptography, not canned animations — that each one is detected and blocked in real time.
+
+[![Python](https://img.shields.io/badge/python-3.11-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Flask](https://img.shields.io/badge/flask-3.1-black?logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
+[![Tailwind CSS](https://img.shields.io/badge/tailwind-3.4-38BDF8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Deployed on Render](https://img.shields.io/badge/deploy-render-46E3B7?logo=render&logoColor=white)](https://render.com/)
+[![Cloudflare Tunnel](https://img.shields.io/badge/transport-cloudflare%20tunnel-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
+
+[Live demo](#-running-the-demo) · [Architecture](#-architecture) · [Scenarios](#-the-three-scenarios) · [Security model](#-security-model) · [Setup](#-setup)
+
+</div>
+
+<br>
+
+<div align="center">
+  <img src="cloud-security-demo/redesign/after.png" alt="Aegis security console — overview" width="840">
+</div>
+
+<br>
+
+## Overview
+
+Aegis is a small distributed system built to answer one question honestly: **can a lightweight set of real controls actually detect and stop a staged attack, live, in front of an audience?**
+
+Five independent agent nodes (standing in for cloud VMs) register with a central orchestrator over signed, authenticated HTTP. An operator triggers one of three staged attack patterns from the dashboard; the target node's own policy engine evaluates the pattern against a real threshold, and the dashboard streams the resulting **detected → analyzing → prevented** sequence as it happens — sourced from signed telemetry the agents themselves emit, not scripted UI states.
+
+> **Everything is synthetic.** Fixed dummy datasets, a sandboxed demo-only auth endpoint, and fixed logical ports stand in for real infrastructure. No exploit payloads, no production targets, no real credentials. See [Security model](#-security-model).
+
+<br>
+
+## 🖼️ Screenshots
+
+<table>
+<tr>
+<td width="60%"><img src="cloud-security-demo/redesign/after.png" alt="Dashboard overview"></td>
+<td width="40%"><img src="cloud-security-demo/redesign/login.png" alt="Operator login"></td>
+</tr>
+<tr>
+<td align="center"><sub>Security overview — live node status, stat summary, event log</sub></td>
+<td align="center"><sub>Operator access — password-gated, rate-limited login</sub></td>
+</tr>
+</table>
+
+<details>
+<summary><b>Mobile layout</b></summary>
+<br>
+<img src="cloud-security-demo/redesign/mobile.png" alt="Mobile dashboard" width="320">
+</details>
+
+<br>
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart LR
+    subgraph Operator
+        Browser["Operator browser"]
+    end
+
+    subgraph Render["Render.com — Master Server"]
+        Flask["Flask orchestrator<br/>+ Tailwind dashboard"]
+        DB[("SQLite<br/>events · nodes · runs")]
+        Flask --- DB
+    end
+
+    subgraph Nodes["5 × Colab Notebooks — Agent Nodes"]
+        N1["node-1<br/>synthetic data"]
+        N2["node-2<br/>identity sandbox"]
+        N3["node-3<br/>policy enforcement"]
+        N4["node-4<br/>telemetry relay"]
+        N5["node-5<br/>rehearsal standby"]
+    end
+
+    Browser <-->|HTTPS + session + CSRF| Flask
+    Flask <-->|HMAC-signed HTTPS| CF1["Cloudflare Tunnel"]
+    CF1 <--> N1
+    Flask <-->|HMAC-signed HTTPS| CF2["Cloudflare Tunnel"]
+    CF2 <--> N2
+    Flask -.->|per-node derived key| N3
+    Flask -.->|per-node derived key| N4
+    Flask -.->|per-node derived key| N5
+    N1 -.->|rejected: master-only boundary| N2
+```
+
+Each agent node is reachable only through its own **Cloudflare Tunnel** URL and authenticates every request with an **HMAC signature derived from a per-node key** — the master's root secret never leaves the master server, and no two nodes share a key. See [`SETUP.md`](SETUP.md) for the full Cloudflare Tunnel / Render / Colab walkthrough.
+
+<br>
+
+## 🎯 The three scenarios
+
+| # | Scenario | Staged pattern | Real control | Outcome |
+|---|---|---|---|---|
+| 1 | **Cloud data breach** | Rapid bulk reads against a synthetic customer-records endpoint | Sliding-window volume guard (80 rows / 10s) | Actor blocked, requests rejected `403` |
+| 2 | **Identity attack** | Repeated failed logins, then a replayed one-time token | Rate limit + lockout, single-use token registry | Account locked `429`, replayed token rejected `403` |
+| 3 | **Virtualization threat** | Node-to-node request toward a peer's internal-only service | Application-level segmentation (master-only HMAC boundary) | Peer request rejected `401`, zero internal services reached |
+
+Every run moves through the same observable lifecycle, driven entirely by signed events from the node that handled the request:
+
+```
+Detected  →  Analyzing  →  Prevented
+  🟠            🟡             🟢
+```
+
+<br>
+
+## 🔐 Security model
+
+Aegis treats the *defense* layer as the actual product — the "attack" side is theatrical, the control side is not.
+
+| Control | Implementation |
+|---|---|
+| **Transport authentication** | HMAC-SHA256 over `sender + method + path + timestamp + nonce + body hash`, verified on every master ↔ agent request |
+| **Replay protection** | 60s timestamp window + single-use nonce tracking per sender |
+| **Per-node credentials** | Each node's key is derived from the master secret (`tools_node_key.py`) — the root secret is never placed on a Colab notebook |
+| **Operator auth** | Password-gated session, rate-limited login (10 attempts / min / IP), HttpOnly + SameSite cookies |
+| **CSRF protection** | Per-session token required on every state-changing request |
+| **Response hardening** | Strict CSP, `X-Content-Type-Options`, `Referrer-Policy`, `Cache-Control: no-store` |
+| **Synthetic-only surfaces** | Fixed dummy dataset, fixed sandbox account, fixed logical port — no path to real data or real systems |
+
+<br>
+
+## 📁 Repository structure
+
+```
+cloud-security-demo/
+├── master-server/        # Flask orchestrator + Tailwind dashboard (deploys to Render)
+│   ├── app.py
+│   ├── events/            # event schema + SQLite-backed store
+│   ├── templates/
+│   └── static/
+├── node-agent/            # Agent run inside each Colab notebook
+│   └── agent.py
+├── scenarios/              # The three staged attack scripts
+│   ├── data_breach.py
+│   ├── identity_attack.py
+│   └── virtualization_threat.py
+├── common/                 # Shared event contract + HMAC security module
+├── colab/                  # Node bootstrap notebook
+├── run_local.py            # Launch master + all 5 agents locally in one command
+├── run_scenario.py         # CLI to trigger a scenario without the browser
+└── SETUP.md / RUN_OF_SHOW.md / ARCHITECTURE.md
+```
+
+<br>
+
+## 🚀 Setup
+
+<details>
+<summary><b>Run everything locally (one command)</b></summary>
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python run_local.py
 ```
 
-Open **http://127.0.0.1:5000** and enter the **temporary operator password printed in your terminal**. Five actual agent processes register within about 10 seconds. Click **Run full simulation**. Each launch generates new transport credentials; the local SQLite incident log remains until you reset it. Ctrl+C stops all six processes.
+This launches the master server and all 5 agent nodes as local processes with ephemeral, auto-generated secrets, and prints the dashboard URL and operator password to the console.
 
-> Local mode binds the dashboard to all interfaces for live preview. Do not expose it as a production service. Agent ports bind only to loopback. No real credentials, customer records, scanning, or exploit payloads are used.
+</details>
 
-## What is implemented
+<details>
+<summary><b>Live demo: Colab nodes + Render master</b></summary>
 
-- Responsive dark dashboard with five-node health, metrics, live 1-second polling, node selection, individual and full-sequence triggers, stage/severity filters, JSON export, policy explanations, reset, and operator login.
-- SQLite event/registration/run storage, event validation, event IDs and deduplication, late-event suppression after reset, restart recovery for in-flight runs.
-- Per-node HMAC-SHA256 credentials, timestamp checks, nonce replay rejection, operator CSRF protection, login throttling, strict tunnel URL allowlist and disabled outbound redirects.
-- Shared Colab agent with automatic Cloudflare quick tunnel startup, registration, 8-second heartbeats, bounded event queue and ordered delivery retries.
-- Three deterministic scenarios. The tests verify actual handler status codes, not pre-written success banners.
-- Render Blueprint, reusable Colab notebook, setup guide, 30-minute run-of-show, and test suite.
+1. Deploy `master-server/` to Render (`render.yaml` included — generates `MASTER_SECRET`/`SESSION_SECRET` automatically; set `ADMIN_PASSWORD` yourself).
+2. Generate a per-node key for each of `node-1`…`node-5`:
+   ```bash
+   python tools_node_key.py node-1
+   ```
+3. Open `colab/node_template.ipynb` in Colab — one copy per node. Set `NODE_NAME`, paste the generated key, point `MASTER_URL` at your Render URL.
+4. Each notebook opens its own Cloudflare Tunnel and registers with the master automatically.
 
-| Scenario | Staged workload | Actual defense | Expected evidence |
-|---|---|---|---|
-| Data breach | 4 × 30-row exports against synthetic records | Per-actor 80 rows / 10s sliding-window guard | Third and fourth requests return 403; 60 rows released before detection, zero rows on denied requests |
-| Identity attack | Fixed wrong synthetic password, then replay a freshly generated one-use token | 3 failures / 10s; 60s account lock; single-use token registry | 429 for locked requests; 403 on token reuse; `step_up_required` response flag |
-| Virtualization threat | Exactly one authorized source-agent request to a registered peer's fixed sandbox route | Destination accepts master management identity only | Peer returns 401; signed destination telemetry is required before the master marks the run completed |
+Full walkthrough: [`SETUP.md`](SETUP.md). Suggested live-demo timing: [`RUN_OF_SHOW.md`](RUN_OF_SHOW.md).
 
-A full sequence creates **4 incidents / 12 events**: identity produces separate rate-limit and token-replay incidents. Metrics are counts in the retained log, **not** proof that all conceivable attacks are prevented.
+</details>
 
-## Important boundaries
-
-**This is a demo, not production security infrastructure.** Virtualization means an application-level stand-in for segmentation, not hypervisor escape detection or a cloud firewall. The public tunnel is transport. The peer request is intentionally reachable but unauthorized. An additional logical `/sandbox/connect` route denies internal-service egress before any network operation; it is tested independently. Step-up is a denied-access flag, not an MFA enrollment/verification service. A source/destination host compromise defeats in-process keys and policies; these agents are assumed self-owned and trusted.
-
-The first two staged workloads use Flask's in-process request client against the same authenticated handlers exposed over HTTP. Master → agent, node → master telemetry, and the peer-boundary scenario use real network requests. No events are preloaded.
-
-## Repository
-
-```text
-master-server/     Flask, templates, compiled Tailwind, SQLite store
-node-agent/        Shared agent and deterministic policy engine
-scenarios/         Fixed synthetic workloads
-common/            Stable event contract and HMAC helpers
-colab/             Reusable node notebook
-tests/            Python policy/API tests and Playwright workflow test
-run_local.py       One command → master + five agents
-run_scenario.py    Operator CLI (same backend as dashboard)
-tools_node_key.py  Derive one node credential locally
-tools_post_event.py Manual signed telemetry test
-render.yaml        Render service blueprint
-SETUP.md           Local, Render, Colab, Cloudflare instructions
-RUN_OF_SHOW.md     30-minute presentation and failure fallbacks
-ARCHITECTURE.md    APIs, state, trust boundaries, contract
-PROGRESS.md        Implementation and validation status
-```
-
-## Test and develop
+<details>
+<summary><b>Trigger a scenario without the dashboard</b></summary>
 
 ```bash
-pip install -r requirements-dev.txt
-python -m pytest -q tests
-# Optional UI test, against the running local demo:
-npm ci
-npx playwright install --with-deps chromium
-# Set ADMIN_PASSWORD to the password printed by run_local.py, without committing it.
-npm run test:ui
-# Rebuild checked-in Tailwind utilities after changing classes:
-npm run css
+python run_scenario.py data_breach --node node-1 --master https://your-service.onrender.com
 ```
 
-The browser test resets the local demo, runs all scenarios, checks signed destination evidence, tests filters/navigation/export and mobile overflow, and leaves its synthetic results visible. Set `DEMO_URL` for a different test URL. Do not run it against a demo whose incident log you need to retain.
+</details>
 
-**Cloud deployment is prepared, not performed.** Follow [SETUP.md](SETUP.md) using your accounts; rehearse on the actual cloud path before presenting. Free hosting/runtime availability is not guaranteed.
+<br>
 
-## Console design
+## 🧰 Stack
 
-All presentation uses Tailwind utilities. Run `npm run css` to rebuild `master-server/static/output.css` from `tailwind.input.css`; the source contains only local font-face declarations and Tailwind directives. IBM Plex fonts are self-hosted under `static/fonts/` (license included). No icon library, framework, runtime CSS CDN or custom dashboard stylesheet is needed.
+<div align="center">
 
-`redesign/before-after.png` compares the original and rebuilt interface. Individual desktop, mobile and login screenshots are included. To repeat the visual checks against the running local server, set `ADMIN_PASSWORD` and run `node tests/redesign.cjs` after the normal UI test.
+![Python](https://img.shields.io/badge/-Python-3776AB?style=flat-square&logo=python&logoColor=white)
+![Flask](https://img.shields.io/badge/-Flask-000000?style=flat-square&logo=flask&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/-Tailwind%20CSS-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white)
+![SQLite](https://img.shields.io/badge/-SQLite-07405E?style=flat-square&logo=sqlite&logoColor=white)
+![Cloudflare](https://img.shields.io/badge/-Cloudflare%20Tunnel-F38020?style=flat-square&logo=cloudflare&logoColor=white)
+![Render](https://img.shields.io/badge/-Render-46E3B7?style=flat-square&logo=render&logoColor=white)
+![Google Colab](https://img.shields.io/badge/-Google%20Colab-F9AB00?style=flat-square&logo=googlecolab&logoColor=white)
+
+</div>
+
+<br>
+
+## ⚠️ Scope & disclaimer
+
+This is a **demonstration prototype**, not a production security product. All attacks are staged sequences run against fixed, self-owned synthetic targets created specifically to receive them — no functional exploit code, no real credential harvesting, no real privilege escalation. The detection and prevention logic is real and genuinely enforced; the "attacker" side exists purely to trigger it in a way an audience can follow live.
+
+<br>
+
+## License
+
+[MIT](LICENSE) — replace with your preferred license before publishing.
+
+<div align="center">
+<sub>Built with Aegis · Evidence comes from the agents, not the interface.</sub>
+</div>
