@@ -20,7 +20,7 @@ A live, distributed security console that stages three classes of attack against
 <br>
 
 <div align="center">
-  <img src="cloud-security-demo/redesign/after.png" alt="Aegis security console — overview" width="840">
+  <img src="https://github.com/Terrificdatabytes/Aegis/blob/main/redesign/after.png" alt="Aegis security console — overview" width="840">
 </div>
 
 <br>
@@ -39,8 +39,8 @@ Five independent agent nodes (standing in for cloud VMs) register with a central
 
 <table>
 <tr>
-<td width="60%"><img src="cloud-security-demo/redesign/after.png" alt="Dashboard overview"></td>
-<td width="40%"><img src="cloud-security-demo/redesign/login.png" alt="Operator login"></td>
+<td width="60%"><img src="https://github.com/Terrificdatabytes/Aegis/blob/main/redesign/after.png" alt="Dashboard overview"></td>
+<td width="40%"><img src="https://github.com/Terrificdatabytes/Aegis/blob/main/redesign/login.png" alt="Operator login"></td>
 </tr>
 <tr>
 <td align="center"><sub>Security overview — live node status, stat summary, event log</sub></td>
