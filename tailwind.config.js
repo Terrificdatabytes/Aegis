@@ -1,5 +1,5 @@
 module.exports = {
-  content: ['./master-server/templates/*.html', './master-server/static/dashboard.js'],
+  content: ['./master-server/templates/*.html', './master-server/static/*.js'],
   theme: {
     fontSize: { sm: ['14px', '20px'], base: ['16px', '24px'], '2xl': ['24px', '32px'], '4xl': ['36px', '40px'] },
     extend: {
@@ -9,7 +9,8 @@ module.exports = {
       },
       fontFamily: { sans: ['IBM Plex Sans', 'sans-serif'], mono: ['IBM Plex Mono', 'monospace'] },
       gridTemplateColumns: { console: '192px minmax(0, 1fr)', operations: 'minmax(0, 2fr) minmax(0, 3fr)', node: '112px minmax(0, 1fr) 168px 104px' },
-      maxHeight: { log: '560px' }
+      maxHeight: { log: '560px' },
+      minWidth: { topology: '760px' }
     }
   },
   plugins: []

@@ -11,6 +11,7 @@ import time
 import uuid
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import psutil
 import requests
 from flask import Flask, request, jsonify
 from common.contract import NODES, SCENARIOS, now
@@ -251,6 +252,23 @@ def create_app(node_id, key, emit=None):
     return app
 
 
+class ResourceSampler:
+    def __init__(self, node_id):
+        self.node_id = node_id
+        self.process = psutil.Process()
+        psutil.cpu_percent(interval=None)
+        self.process.cpu_percent(interval=None)
+
+    def sample(self):
+        memory = psutil.virtual_memory()
+        return {'node_id': self.node_id, 'timestamp': now(), 'scope': 'runtime-host',
+                'cpu_percent': psutil.cpu_percent(interval=None), 'ram_percent': memory.percent,
+                'ram_used_bytes': memory.total - memory.available, 'ram_total_bytes': memory.total,
+                'process_cpu_percent': self.process.cpu_percent(interval=None),
+                'process_rss_bytes': self.process.memory_info().rss,
+                'cpu_count': psutil.cpu_count() or 1}
+
+
 class Reporter:
     def __init__(self, master, node_id, key, public_url):
         self.master, self.node_id, self.key, self.public_url = master.rstrip('/'), node_id, key, public_url
@@ -291,8 +309,17 @@ class Reporter:
                     delay = min(delay * 2, 16)
             self.events.task_done()
 
+    def telemetry_loop(self):
+        # Initialize and sample on the same thread: psutil host CPU baselines are thread-local.
+        sampler = ResourceSampler(self.node_id)
+        while not self.stop.wait(2):
+            try: self.post('/api/telemetry', sampler.sample())
+            except Exception as exc:
+                print(f'[{self.node_id}] resource sample skipped: {type(exc).__name__}', flush=True)
+        # Do not queue old samples after an outage; gaps must remain visible.
+
     def start(self):
-        for fn in [self.registration_loop, self.event_loop]: threading.Thread(target=fn, daemon=True).start()
+        for fn in [self.registration_loop, self.event_loop, self.telemetry_loop]: threading.Thread(target=fn, daemon=True).start()
 
 
 def quick_tunnel(port):

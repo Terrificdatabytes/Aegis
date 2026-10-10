@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import requests
 from flask import Flask, jsonify, request, render_template, session, redirect
 from common.security import Verifier, node_key, signed_headers, encode, valid_agent_url
+from common.telemetry import validate_sample
 from common.contract import NODES, SCENARIOS, validate_event, now
 from events.store import Store
 
@@ -99,6 +100,24 @@ def create_app(config=None):
     @app.get('/api/state')
     @admin
     def state(): return jsonify(store.snapshot())
+
+    @app.post('/api/telemetry')
+    @node_auth
+    def telemetry():
+        try:
+            data = validate_sample(request.get_json(silent=True))
+            if data['node_id'] != request.demo_node: raise ValueError('Node identity mismatch')
+        except ValueError as exc: return jsonify(error=str(exc)), 400
+        store.telemetry(data)
+        return jsonify(ok=True), 201
+
+    @app.get('/api/observability')
+    @admin
+    def observations():
+        try: seconds = int(request.args.get('seconds', '300'))
+        except ValueError: return jsonify(error='Invalid time window'), 400
+        if seconds not in [60, 300, 900, 1800]: return jsonify(error='Unsupported time window'), 400
+        return jsonify(store.observations(seconds))
 
     @app.post('/api/nodes/register')
     @node_auth

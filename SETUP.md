@@ -181,3 +181,7 @@ These links are supplied for verification; the cloud path was not exercised in t
 - Cloudflare quick tunnels: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/
 - Official cloudflared releases: https://github.com/cloudflare/cloudflared/releases
 - Colab usage limitations: https://research.google.com/colaboratory/faq.html
+
+## Enabling resource graphs on an existing installation
+
+Deploy the updated master and update **all** agents to the same release. Re-run each notebook's dependency installation (`psutil` is now required), stop its existing agent process, then start it again. No new credentials or public ports are required: metrics reuse node HMAC authentication and the master HTTPS route. Old agents still register and emit incidents but show no resource data until upgraded. Run `npm run css` if rebuilding frontend utilities; deploy the compiled `static/output.css` and new `static/observability.js` together. Allow a few samples to arrive before opening Observability. Resource history starts from actual collection and does not backfill.

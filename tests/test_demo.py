@@ -269,3 +269,61 @@ def test_wrong_node_cannot_report_for_a_registered_run(master):
         response=signed(c,'/api/events',event(node_id='node-3',run_id='r'),key=node_key(SECRET,'node-3'),sender='node-3')
         assert response.status_code==201
     assert store.snapshot()['events']==[]
+
+
+def test_telemetry_validation_and_retention(master):
+    sample={'node_id':'node-1','timestamp':now(),'scope':'runtime-host','cpu_percent':1.5,
+            'ram_percent':2.5,'ram_used_bytes':10,'ram_total_bytes':100,
+            'process_cpu_percent':0.5,'process_rss_bytes':50,'cpu_count':2}
+    with master.test_client() as c:
+        assert signed(c,'/api/telemetry',sample).status_code==201
+        for field,bad in [('scope','vm'),('cpu_percent',101),('ram_used_bytes',101),('cpu_count',0),('node_id','node-2')]:
+            assert signed(c,'/api/telemetry',{**sample,field:bad}).status_code==400
+        csrf=login(c)
+        result=c.get('/api/observability?seconds=300')
+        assert result.status_code==200
+        assert len(result.json['samples']['node-1'])==1
+        assert c.get('/api/observability?seconds=30').status_code==400
+        assert master.extensions['store'].snapshot()['events']==[]
+
+
+def test_telemetry_tampering_rejected(master):
+    body=encode({'node_id':'node-1'})
+    with master.test_client() as c:
+        assert c.post('/api/telemetry',data=body,headers=signed_headers(KEY,'node-2','POST','/api/telemetry',body)).status_code==401
+
+
+def test_metrics_history_is_bounded_and_reset_keeps_resources(master):
+    store=master.extensions['store']
+    sample={'node_id':'node-1','timestamp':now(),'scope':'runtime-host','cpu_percent':0,
+            'ram_percent':20,'ram_used_bytes':20,'ram_total_bytes':100,
+            'process_cpu_percent':0,'process_rss_bytes':10,'cpu_count':1}
+    for _ in range(910):store.telemetry(sample)
+    assert len(store.observations(1800)['samples']['node-1'])==900
+    store.reset()
+    assert len(store.observations(1800)['samples']['node-1'])==900
+    store.db.execute('UPDATE telemetry SET received_epoch=0')
+    assert store.observations(60)['samples']['node-1']==[]
+    store.telemetry(sample)
+    assert store.db.execute('SELECT COUNT(*) FROM telemetry').fetchone()[0]==1
+
+
+@pytest.mark.parametrize('value',[float('nan'),float('inf'),-1,True,'100'])
+def test_nonfinite_or_untyped_resource_values_rejected(value):
+    from common.telemetry import validate_sample
+    data={'node_id':'node-1','timestamp':now(),'scope':'runtime-host','cpu_percent':value,
+          'ram_percent':20,'ram_used_bytes':20,'ram_total_bytes':100,
+          'process_cpu_percent':0,'process_rss_bytes':10,'cpu_count':1}
+    with pytest.raises(ValueError):validate_sample(data)
+
+
+def test_resource_sampler_reads_real_host_and_process():
+    from common.telemetry import validate_sample
+    measured=agent.ResourceSampler('node-1').sample()
+    assert validate_sample(measured)['ram_total_bytes']>0
+    assert measured['process_rss_bytes']>0
+
+
+def test_metrics_requires_operator_session(master):
+    with master.test_client() as c:
+        assert c.get('/api/observability').status_code==401

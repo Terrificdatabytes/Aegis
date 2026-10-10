@@ -14,6 +14,8 @@ class Store:
         PRAGMA journal_mode=WAL;
         CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT UNIQUE, data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS nodes(node_id TEXT PRIMARY KEY, url TEXT, last_seen TEXT, registered TEXT);
+        CREATE TABLE IF NOT EXISTS telemetry(id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, received_epoch REAL, data TEXT);
+        CREATE INDEX IF NOT EXISTS telemetry_node ON telemetry(node_id, id);
         CREATE TABLE IF NOT EXISTS runs(run_id TEXT PRIMARY KEY, data TEXT NOT NULL);
         ''')
         # A process restart cannot safely resume an in-flight HTTP command.
@@ -66,6 +68,28 @@ class Store:
                 if e['severity'] == 'critical' and e['stage'] == 'detected': counts['critical'] += 1
             runs = [json.loads(r[0]) for r in self.db.execute('SELECT data FROM runs ORDER BY rowid DESC LIMIT 12')]
             return {'nodes': nodes, 'events': events, 'metrics': counts, 'runs': runs, 'server_time': now()}
+
+    def telemetry(self, sample):
+        import time
+        with self.lock, self.db:
+            stamp = time.time()
+            self.db.execute('INSERT INTO telemetry(node_id,received_epoch,data) VALUES(?,?,?)',
+                            (sample['node_id'], stamp, json.dumps({**sample, 'received_at': now()})))
+            self.db.execute('DELETE FROM telemetry WHERE received_epoch < ?', (stamp - 1800,))
+            # Per-node cap also bounds storage under excess signed traffic.
+            self.db.execute('DELETE FROM telemetry WHERE node_id=? AND id NOT IN (SELECT id FROM telemetry WHERE node_id=? ORDER BY id DESC LIMIT 900)',
+                            (sample['node_id'], sample['node_id']))
+
+    def observations(self, seconds=300):
+        import time
+        with self.lock:
+            cutoff = time.time() - seconds
+            samples = {node: [] for node in NODES}
+            for row in self.db.execute('SELECT data FROM telemetry WHERE received_epoch >= ? ORDER BY id', (cutoff,)):
+                data = json.loads(row[0])
+                samples[data['node_id']].append(data)
+            return {'samples': samples, 'window_seconds': seconds, 'interval_seconds': 2,
+                    'server_time': now(), 'scope': 'runtime-host'}
 
     def reset(self):
         with self.lock, self.db:
